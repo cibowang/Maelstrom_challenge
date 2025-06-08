@@ -1,6 +1,6 @@
 use rsecho::*;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::io::{StdoutLock, Write};
 
@@ -13,24 +13,25 @@ pub enum Payload {
         #[serde(rename = "id")]
         guid: String,
     },
-    Init {
-        node_id: String,
-        node_ids: Vec<String>,
-    },
-    InitOk,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct UNode {
-    // msg_id
+    node: String,
     id: usize,
 }
 
-impl Node<Payload> for UNode {
+impl Node<Payload, ()> for UNode {
+    fn from_init(init: rsecho::Init, _state: ()) -> anyhow::Result<Self> {
+        Ok(UNode {
+            node: init.node_id,
+            id: 1,
+        })
+    }
     fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Generate => {
-                let guid = ulid::Ulid::new().to_string();
+                let guid = format!("{}-{}", self.node, self.id);
                 let res = Message {
                     src: input.dst,
                     dst: input.src,
@@ -46,29 +47,12 @@ impl Node<Payload> for UNode {
                     .context("Writing tailing new line")?;
                 self.id += 1
             }
-            Payload::Init { .. } => {
-                let res = Message {
-                    src: input.dst,
-                    dst: input.src,
-                    body: Body {
-                        id: Some(self.id),
-                        in_reply_to: input.body.id,
-                        payload: Payload::InitOk,
-                    },
-                };
-                serde_json::to_writer(&mut *output, &res).context("Serialize response to init")?;
-                output
-                    .write_all(b"\n")
-                    .context("Writing tailing new line")?;
-                self.id += 1
-            }
             Payload::GenerateOk { .. } => {}
-            Payload::InitOk => bail!("Received InitOk message"),
         }
         Ok(())
     }
 }
 
 fn main() -> anyhow::Result<()> {
-    main_loop(UNode { id: 0 })
+    main_loop::<_, UNode, _>(())
 }
