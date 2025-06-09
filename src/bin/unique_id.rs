@@ -29,23 +29,15 @@ impl Node<Payload, ()> for UNode {
         })
     }
     fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
-        match input.body.payload {
+        let mut res = input.into_reply(Some(&mut self.id));
+        match res.body.payload {
             Payload::Generate => {
                 let guid = format!("{}-{}", self.node, self.id);
-                let res = Message {
-                    src: input.dst,
-                    dst: input.src,
-                    body: Body {
-                        id: Some(self.id),
-                        in_reply_to: input.body.id,
-                        payload: Payload::GenerateOk { guid },
-                    },
-                };
+                res.body.payload = Payload::GenerateOk { guid };
                 serde_json::to_writer(&mut *output, &res).context("Serialize response to echo")?;
                 output
                     .write_all(b"\n")
                     .context("Writing tailing new line")?;
-                self.id += 1
             }
             Payload::GenerateOk { .. } => {}
         }
