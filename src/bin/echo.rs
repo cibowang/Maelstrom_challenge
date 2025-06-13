@@ -19,10 +19,17 @@ struct ENode {
 }
 
 impl Node<Payload, ()> for ENode {
-    fn from_init(_init: rsecho::Init, _state: ()) -> anyhow::Result<Self> {
+    fn from_init(
+        _init: rsecho::Init,
+        _state: (),
+        _tx: std::sync::mpsc::Sender<Event<Payload>>,
+    ) -> anyhow::Result<Self> {
         Ok(ENode { id: 1 })
     }
-    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+    fn send(&mut self, input: Event<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+        let Event::Message(input) = input else {
+            panic!("Expecting injection but got none")
+        };
         let mut res = input.into_reply(Some(&mut self.id));
         match res.body.payload {
             Payload::Echo { echo } => {
@@ -39,5 +46,5 @@ impl Node<Payload, ()> for ENode {
 }
 
 fn main() -> anyhow::Result<()> {
-    main_loop::<_, ENode, _>(())
+    main_loop::<_, ENode, _, _>(())
 }

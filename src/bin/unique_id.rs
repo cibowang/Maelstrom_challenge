@@ -22,13 +22,20 @@ struct UNode {
 }
 
 impl Node<Payload, ()> for UNode {
-    fn from_init(init: rsecho::Init, _state: ()) -> anyhow::Result<Self> {
+    fn from_init(
+        init: rsecho::Init,
+        _state: (),
+        _tx: std::sync::mpsc::Sender<Event<Payload>>,
+    ) -> anyhow::Result<Self> {
         Ok(UNode {
             node: init.node_id,
             id: 1,
         })
     }
-    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+    fn send(&mut self, input: Event<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+        let Event::Message(input) = input else {
+            panic!("Expecting injection but got none")
+        };
         let mut res = input.into_reply(Some(&mut self.id));
         match res.body.payload {
             Payload::Generate => {
@@ -46,5 +53,5 @@ impl Node<Payload, ()> for UNode {
 }
 
 fn main() -> anyhow::Result<()> {
-    main_loop::<_, UNode, _>(())
+    main_loop::<_, UNode, _, _>(())
 }
