@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use std::io::{StdoutLock, Write};
 
@@ -12,7 +12,6 @@ struct Message {
     body: Body,
 }
 
-//
 #[derive(Serialize, Deserialize)]
 struct Body {
     // new msg_id
@@ -24,10 +23,13 @@ struct Body {
     payload: Payload,
 }
 
+// abstract type in Payload
+// type must be snake_case
 #[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 enum Payload {
     Init {
-        id: usize,
         node_id: String,
         node_ids: Vec<String>,
     },
@@ -37,14 +39,17 @@ enum Payload {
     Echo {
         echo: String,
     },
+    // return echo
     EchoOk {
         echo: String,
     },
 }
 
 // for reply_msg
+#[derive(Serialize, Deserialize)]
 struct EchoState {
     // new msg_id
+    #[serde(rename = "msg_id")]
     id: usize,
 }
 
@@ -65,14 +70,16 @@ impl EchoState {
                     },
                 };
                 // deserialize msg into JSON to output
-                serde_json::to_writer(&mut output, &reply_msg)?;
-                output.write_all(b"\n")?;
+                // or use reply_msg.serialize(output)
+                serde_json::to_writer(&mut output, &reply_msg)
+                    .context("deserializing reply msg")?;
+                output.write_all(b"\n").context("writiing to stdout")?;
                 // try increment msg_id
                 self.id += 1;
             }
             // should NOT send back init ok to maelstrom
             Payload::InitOk => {
-                bail!("Not expect to send back init_ok")
+                bail!("Not expecting init_ok msg to send back")
             }
             Payload::Echo { echo } => {
                 let reply_msg = Message {
@@ -84,8 +91,9 @@ impl EchoState {
                         payload: Payload::EchoOk { echo },
                     },
                 };
-                serde_json::to_writer(&mut output, &reply_msg)?;
-                output.write_all(b"\n")?;
+                serde_json::to_writer(&mut output, &reply_msg)
+                    .context("deserializing reply msg")?;
+                output.write_all(b"\n").context("writing to stdout")?;
                 self.id += 1;
             }
             // do nothing when rcvd echo_ok msg
@@ -95,17 +103,21 @@ impl EchoState {
     }
 }
 
+// return echo
 fn main() -> anyhow::Result<()> {
     // StdinLock
     let stdin_handle = std::io::stdin().lock();
-    // StdoutLock
     let inputs = serde_json::Deserializer::from_reader(stdin_handle).into_iter::<Message>();
     let mut echo_state = EchoState { id: 0 };
     for input in inputs {
-        let input = input.expect("the input no fail");
+        let input = input.expect("deserializing reply msg");
+        // StdoutLock
+        // or use let mut output = serde_json::Serializer::new(stdout_handle)
         let stdout_handle = std::io::stdout().lock();
         // send msg to stdout
-        echo_state.send(input, stdout_handle)?
+        echo_state
+            .send(input, stdout_handle)
+            .context("sending reply msg failed")?
     }
     Ok(())
 }
