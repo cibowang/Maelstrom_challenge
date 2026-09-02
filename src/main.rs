@@ -14,28 +14,28 @@ struct Message {
 
 #[derive(Serialize, Deserialize)]
 struct Body {
-    // new msg_id
+    // outgoing msg_id
     #[serde(rename = "msg_id")]
     id: Option<usize>,
-    // original message_id
+    // incoming message_id
     in_reply_to: Option<usize>,
     #[serde(flatten)]
     payload: Payload,
 }
 
-// abstract type in Payload
-// type must be snake_case
+// abstract Payload into type (snake_case)
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 enum Payload {
     Init {
         node_id: String,
+        // all nodes including our node
         node_ids: Vec<String>,
     },
     InitOk,
     // echo to the node
-    // id will be abstracted into the Body & Node
+    // id will be abstracted into the Body & used in Node
     Echo {
         echo: String,
     },
@@ -46,14 +46,12 @@ enum Payload {
 }
 
 // for reply_msg
-#[derive(Serialize, Deserialize)]
 struct EchoState {
-    // new msg_id
-    #[serde(rename = "msg_id")]
+    // outgoing msg_id
     id: usize,
 }
 
-// serer_node to send reply msg to client node as per the incoming msg
+// our node to send reply msg to client node
 // input: deserialized format (stdin)
 // output: serialized format (stdout)
 impl EchoState {
@@ -65,6 +63,7 @@ impl EchoState {
                     dst: input.src,
                     body: Body {
                         id: Some(self.id),
+                        // incoming msg
                         in_reply_to: input.body.id,
                         payload: Payload::InitOk,
                     },
@@ -96,22 +95,21 @@ impl EchoState {
                 output.write_all(b"\n").context("writing to stdout")?;
                 self.id += 1;
             }
-            // do nothing when rcvd echo_ok msg
+            // do nothing when rcvd echo_ok
             Payload::EchoOk { .. } => {}
         }
         Ok(())
     }
 }
 
-// return echo
 fn main() -> anyhow::Result<()> {
-    // StdinLock
+    // get StdinLock
     let stdin_handle = std::io::stdin().lock();
     let inputs = serde_json::Deserializer::from_reader(stdin_handle).into_iter::<Message>();
     let mut echo_state = EchoState { id: 0 };
     for input in inputs {
         let input = input.expect("deserializing reply msg");
-        // StdoutLock
+        // get StdoutLock
         // or use let mut output = serde_json::Serializer::new(stdout_handle)
         let stdout_handle = std::io::stdout().lock();
         // send msg to stdout
