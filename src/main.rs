@@ -47,7 +47,8 @@ enum Payload {
 
 // for reply_msg
 struct EchoState {
-    // outgoing msg_id
+    // id assigned to outgoing msg (locally unique)
+    // NO need to be globally unique (whereby msg_id + node_id IS!)
     id: usize,
 }
 

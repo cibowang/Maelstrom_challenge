@@ -23,7 +23,7 @@ pub struct Body<Payload> {
     pub payload: Payload,
 }
 
-// abstract awasy init node
+// abstract away init node
 #[derive(Serialize, Deserialize)]
 pub struct InitNode {
     pub node_id: String,

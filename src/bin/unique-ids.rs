@@ -2,8 +2,9 @@ use anyhow::{Context, bail};
 use rsecho::*;
 use serde::{Deserialize, Serialize};
 use std::io::{StdoutLock, Write};
+use ulid::Ulid;
 
-// the very 1st thing is Init
+// need to use dedicated bin file name
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -13,21 +14,21 @@ enum Payload {
         node_ids: Vec<String>,
     },
     InitOk,
-    Echo {
-        echo: String,
-    },
-    EchoOk {
-        echo: String,
+    Generate,
+    // need to specify as guid
+    GenerateOk {
+        #[serde(rename = "id")]
+        guid: String,
     },
 }
 
 // define echo node with msg_id
 #[derive(Serialize, Deserialize)]
-struct EchoNode {
+struct UniqueNode {
     id: usize,
 }
 
-impl rsecho::State<Payload> for EchoNode {
+impl rsecho::State<Payload> for UniqueNode {
     fn send(&mut self, input: Message<Payload>, mut output: StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Init { .. } => {
@@ -49,14 +50,15 @@ impl rsecho::State<Payload> for EchoNode {
             Payload::InitOk => {
                 bail!("should not rcvd init_ok msg");
             }
-            Payload::Echo { echo } => {
+            Payload::Generate => {
+                let ulid = Ulid::generate().to_string();
                 let reply_msg = Message {
                     src: input.dst,
                     dst: input.src,
                     body: Body {
                         id: Some(self.id),
                         in_reply_to: input.body.id,
-                        payload: Payload::EchoOk { echo },
+                        payload: Payload::GenerateOk { guid: ulid },
                     },
                 };
                 serde_json::to_writer(&mut output, &reply_msg)
@@ -65,12 +67,12 @@ impl rsecho::State<Payload> for EchoNode {
                 self.id += 1;
             }
             // do nothing when rcvd echo_ok
-            Payload::EchoOk { .. } => {}
+            Payload::GenerateOk { .. } => {}
         }
         Ok(())
     }
 }
 
 fn main() -> anyhow::Result<()> {
-    main_loop(EchoNode { id: 0 })
+    main_loop(UniqueNode { id: 0 })
 }
