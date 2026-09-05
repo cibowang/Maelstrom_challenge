@@ -1,10 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::io::StdoutLock;
-
-/* Payload as generic type param (DeserializedOwned)
- * its enum still need to be defined in diff ctx
- * */
+use std::io::{StdoutLock, Write};
 
 #[derive(Serialize, Deserialize)]
 pub struct Message<Payload> {
@@ -14,6 +10,11 @@ pub struct Message<Payload> {
     pub body: Body<Payload>,
 }
 
+/* Node used to ONLY have <Payload> as generic type, now it has a State
+ * Init logic abstracted into enum to get Init
+ * also add init_payload extraction logic to Node, so that unique_node can have a global unique id
+ * lastly write to the next line in stdout buffer
+ * */
 #[derive(Serialize, Deserialize)]
 pub struct Body<Payload> {
     #[serde(rename = "msg_id")]
@@ -23,37 +24,67 @@ pub struct Body<Payload> {
     pub payload: Payload,
 }
 
-// abstract away init node
+// used in echo to be extracted
 #[derive(Serialize, Deserialize)]
-pub struct InitNode {
-    pub node_id: String,
-    pub node_ids: Vec<String>,
+pub struct Init {
+    node_id: String,
+    node_ids: Vec<String>,
 }
 
-// state machine
-pub trait State<Payload> {
-    fn send(&mut self, input: Message<Payload>, output: StdoutLock) -> anyhow::Result<()>;
+// define init payload to extract Init
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum InitPayload {
+    Init(Init),
+    InitOk,
 }
 
-// state machine on Node
-pub fn main_loop<S, Payload>(mut state: S) -> anyhow::Result<()>
+// NEW: extract Some(Init) from init_payload (input Message) -> use let..else
+// NEW: extract Init_Ok_msg
+pub trait Payload: Sized {
+    fn extract_init(input: Self) -> Option<Init>;
+    fn extract_init_ok() -> Self;
+}
+
+// NEW: construct state from Init (S as the new bound)
+pub trait Node<S, Payload>: Sized {
+    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()>;
+    fn from_init(state: S, init: Init) -> anyhow::Result<Self>;
+}
+
+// extract Init & write to buffer
+pub fn main_loop<S, N, P>(state: S) -> anyhow::Result<()>
 where
-    S: State<Payload>,
-    Payload: DeserializeOwned,
+    P: Payload + DeserializeOwned + Serialize,
+    N: Node<S, P>,
 {
-    // get StdinLock
     let stdin_handle = std::io::stdin().lock();
-    let inputs =
-        serde_json::Deserializer::from_reader(stdin_handle).into_iter::<Message<Payload>>();
+    let mut stdout_handle = std::io::stdout().lock();
+    let mut inputs = serde_json::Deserializer::from_reader(stdin_handle).into_iter::<Message<P>>();
+    let init_msg = inputs
+        .next()
+        .expect("init msg should always present")
+        .context("failed to deserialize init msg")?;
+    let init = Payload::extract_init(init_msg.body.payload).expect("1st payload should be Init");
+    let init_ok = P::extract_init_ok();
+    let reply_msg = Message {
+        src: init_msg.dst,
+        dst: init_msg.src,
+        body: Body {
+            id: Some(0),
+            in_reply_to: init_msg.body.id,
+            payload: init_ok,
+        },
+    };
+    serde_json::to_writer(&mut stdout_handle, &reply_msg).context("deserializing reply msg")?;
+    let _ = &mut stdout_handle
+        .write_all(b"\n")
+        .context("writing to stdout")?;
+    let mut node: N = Node::from_init(state, init)?;
     for input in inputs {
-        let input = input.expect("deserializing reply msg");
-        // get StdoutLock
-        // or use let mut output = serde_json::Serializer::new(stdout_handle)
-        let stdout_handle = std::io::stdout().lock();
-        // send msg to stdout
-        state
-            .send(input, stdout_handle)
-            .context("sending reply msg failed")?
+        let input = input.context("abc")?;
+        let _ = node.send(input, &mut stdout_handle);
     }
     Ok(())
 }

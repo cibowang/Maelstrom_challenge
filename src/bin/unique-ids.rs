@@ -9,10 +9,7 @@ use ulid::Ulid;
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 enum Payload {
-    Init {
-        node_id: String,
-        node_ids: Vec<String>,
-    },
+    Init(rsecho::Init),
     InitOk,
     Generate,
     // need to specify as guid
@@ -22,14 +19,27 @@ enum Payload {
     },
 }
 
+impl rsecho::Payload for Payload {
+    fn extract_init(input: Self) -> Option<Init> {
+        let Payload::Init(init) = input else {
+            return None;
+        };
+        Some(init)
+    }
+
+    fn extract_init_ok() -> Self {
+        Payload::InitOk
+    }
+}
+
 // define echo node with msg_id
 #[derive(Serialize, Deserialize)]
 struct UniqueNode {
     id: usize,
 }
 
-impl rsecho::State<Payload> for UniqueNode {
-    fn send(&mut self, input: Message<Payload>, mut output: StdoutLock) -> anyhow::Result<()> {
+impl Node<(), Payload> for UniqueNode {
+    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Init { .. } => {
                 let reply_msg = Message {
@@ -70,6 +80,10 @@ impl rsecho::State<Payload> for UniqueNode {
             Payload::GenerateOk { .. } => {}
         }
         Ok(())
+    }
+
+    fn from_init(_state: (), _init: Init) -> anyhow::Result<Self> {
+        todo!()
     }
 }
 
