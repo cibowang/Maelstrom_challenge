@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::io::{StdoutLock, Write};
 use ulid::Ulid;
 
-// need to use dedicated bin file name
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -32,14 +31,17 @@ impl rsecho::Payload for Payload {
     }
 }
 
-// define echo node with msg_id
+// define unique node with msg_id
+// node should NEVER BE NONE
+// since always know we can get init_ok_msg in the 1st place
 #[derive(Serialize, Deserialize)]
 struct UniqueNode {
+    node: String,
     id: usize,
 }
 
 impl Node<(), Payload> for UniqueNode {
-    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+    fn send(&mut self, input: Message<Payload>, mut output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Init { .. } => {
                 let reply_msg = Message {
@@ -87,6 +89,7 @@ impl Node<(), Payload> for UniqueNode {
     }
 }
 
+// 0 reserved for init_msg
 fn main() -> anyhow::Result<()> {
     main_loop(UniqueNode { id: 0 })
 }

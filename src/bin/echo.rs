@@ -17,7 +17,7 @@ enum Payload {
     EchoOk { echo: String },
 }
 
-// match on Init
+// Always need to extract Init from payload first
 impl rsecho::Payload for Payload {
     fn extract_init(input: Self) -> Option<Init> {
         let Payload::Init(init) = input else {
@@ -36,10 +36,8 @@ struct EchoNode {
     id: usize,
 }
 
-// don't care about the state
-// still need
 impl rsecho::Node<(), Payload> for EchoNode {
-    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()> {
+    fn send(&mut self, input: Message<Payload>, mut output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Init { .. } => {
                 let reply_msg = Message {
@@ -51,7 +49,7 @@ impl rsecho::Node<(), Payload> for EchoNode {
                         payload: Payload::InitOk,
                     },
                 };
-                serde_json::to_writer(&mut output, &reply_msg)
+                serde_json::to_writer(&mut *output, &reply_msg)
                     .context("deserializing reply msg")?;
                 output.write_all(b"\n").context("writing to stdout")?;
                 self.id += 1;
@@ -83,6 +81,7 @@ impl rsecho::Node<(), Payload> for EchoNode {
     }
 }
 
+// 0 reserved for init_msg
 fn main() -> anyhow::Result<()> {
     main_loop(EchoNode { id: 0 })
 }

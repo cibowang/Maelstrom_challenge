@@ -25,6 +25,7 @@ pub struct Body<Payload> {
 }
 
 // used in echo to be extracted
+// FIXME: abstract init logic herein
 #[derive(Serialize, Deserialize)]
 pub struct Init {
     node_id: String,
@@ -32,6 +33,7 @@ pub struct Init {
 }
 
 // define init payload to extract Init
+// this will be retained after commit 12th
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -42,6 +44,7 @@ pub enum InitPayload {
 
 // NEW: extract Some(Init) from init_payload (input Message) -> use let..else
 // NEW: extract Init_Ok_msg
+// FIXME: abstract Init logic herein
 pub trait Payload: Sized {
     fn extract_init(input: Self) -> Option<Init>;
     fn extract_init_ok() -> Self;
@@ -49,11 +52,12 @@ pub trait Payload: Sized {
 
 // NEW: construct state from Init (S as the new bound)
 pub trait Node<S, Payload>: Sized {
-    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()>;
     fn from_init(state: S, init: Init) -> anyhow::Result<Self>;
+    fn send(&mut self, input: Message<Payload>, output: &mut StdoutLock) -> anyhow::Result<()>;
 }
 
 // extract Init & write to buffer
+// FIXME: defer to get a single input from a concrete type param (instead of from P)
 pub fn main_loop<S, N, P>(state: S) -> anyhow::Result<()>
 where
     P: Payload + DeserializeOwned + Serialize,
@@ -66,21 +70,22 @@ where
         .next()
         .expect("init msg should always present")
         .context("failed to deserialize init msg")?;
-    let init = Payload::extract_init(init_msg.body.payload).expect("1st payload should be Init");
+    let init = P::extract_init(init_msg.body.payload).expect("1st payload should be Init");
     let init_ok = P::extract_init_ok();
     let reply_msg = Message {
         src: init_msg.dst,
         dst: init_msg.src,
         body: Body {
+            // reserved for InitOk
             id: Some(0),
             in_reply_to: init_msg.body.id,
             payload: init_ok,
         },
     };
-    serde_json::to_writer(&mut stdout_handle, &reply_msg).context("deserializing reply msg")?;
+    serde_json::to_writer(&mut stdout_handle, &reply_msg).context("serializing reply msg")?;
     let _ = &mut stdout_handle
         .write_all(b"\n")
-        .context("writing to stdout")?;
+        .context("writing to the next line of stdout")?;
     let mut node: N = Node::from_init(state, init)?;
     for input in inputs {
         let input = input.context("abc")?;
