@@ -1,6 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::io::{StdoutLock, Write};
+use std::io::{BufRead, StdoutLock, Write};
 
 #[derive(Serialize, Deserialize)]
 pub struct Message<Payload> {
@@ -62,15 +62,23 @@ where
     P: DeserializeOwned + Serialize,
     N: Node<S, P>,
 {
-    let mut stdin_handle = std::io::stdin().lock();
+    // if we know the stream is ALWAYS newline-separated.. then we don't need to wait until EOF to know if
+    // can deserialize
+    let mut stdin_handle = std::io::stdin().lock().lines();
     let mut stdout_handle = std::io::stdout().lock();
     // get the init_msg from stdin (channel) with the concrete msg type (Init)
-    let init_msg = serde_json::Deserializer::from_reader(&mut stdin_handle)
-        .into_iter::<Message<InitPayload>>()
-        .next()
-        .expect("no msg rcvd")
-        .context("cannot deserialize msg from channel")?;
-    // check it's the Init herein
+    //let init_msg = serde_json::Deserializer::from_reader(&mut stdin_handle)
+    //    .into_iter::<Message<InitPayload>>()
+    //    .next()
+    //    .expect("no msg rcvd")
+    //    .context("cannot deserialize msg from channel")?;
+    let init_msg: Message<InitPayload> = serde_json::from_str(
+        &stdin_handle
+            .next()
+            .expect("no msg rcvd")
+            .context("failed to read init msg from stdin")?,
+    )
+    .context("cannot deserialize msg from channel")?;
     let InitPayload::Init(init) = init_msg.body.payload else {
         panic!("1st msg should ALWAYS be Init")
     };
@@ -89,13 +97,12 @@ where
     let _ = &mut stdout_handle
         .write_all(b"\n")
         .context("writing to the next line of stdout")?;
-    // construct the node
     let mut node: N = Node::from_init(state, init)?;
-    // node to read into stdin & write from the stdout buffer
-    let inputs = serde_json::Deserializer::from_reader(stdin_handle).into_iter::<Message<P>>();
-    for input in inputs {
-        let input = input.context("abc")?;
-        let _ = node.send(input, &mut stdout_handle);
+    for line in stdin_handle {
+        let line = line.context("failed to read init msg from stdin")?;
+        // mov input here
+        let inputs: Message<P> = serde_json::from_str(&line)?;
+        let _ = node.send(inputs, &mut stdout_handle);
     }
     Ok(())
 }
