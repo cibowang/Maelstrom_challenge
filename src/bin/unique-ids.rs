@@ -2,7 +2,7 @@ use anyhow::Context;
 use rsecho::*;
 use serde::{Deserialize, Serialize};
 use std::io::{StdoutLock, Write};
-use ulid::Ulid;
+// use ulid::Ulid;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -39,7 +39,7 @@ struct UniqueNode {
 
 impl Node<(), Payload> for UniqueNode {
     fn from_init(_state: (), init: rsecho::Init) -> anyhow::Result<Self> {
-        Ok(UniqueNode {
+        Ok(Self {
             node: init.node_id,
             id: 1,
         })
@@ -47,14 +47,15 @@ impl Node<(), Payload> for UniqueNode {
     fn send(&mut self, input: Message<Payload>, mut output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             Payload::Generate => {
-                let ulid = Ulid::generate().to_string();
+                // global unique id
+                let guid = format!("{}-{}", self.node, self.id);
                 let reply_msg = Message {
                     src: input.dst,
                     dst: input.src,
                     body: Body {
                         id: Some(self.id),
                         in_reply_to: input.body.id,
-                        payload: Payload::GenerateOk { guid: ulid },
+                        payload: Payload::GenerateOk { guid },
                     },
                 };
                 serde_json::to_writer(&mut output, &reply_msg)

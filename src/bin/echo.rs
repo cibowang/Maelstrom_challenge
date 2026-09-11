@@ -33,9 +33,10 @@ struct EchoNode {
     id: usize,
 }
 
+// construct the node
 impl rsecho::Node<(), Payload> for EchoNode {
     fn from_init(_state: (), _init: rsecho::Init) -> anyhow::Result<Self> {
-        Ok(EchoNode { id: 1 })
+        Ok(Self { id: 1 })
     }
     fn send(&mut self, input: Message<Payload>, mut output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {

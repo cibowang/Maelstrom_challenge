@@ -10,6 +10,26 @@ pub struct Message<Payload> {
     pub body: Body<Payload>,
 }
 
+// NEW: parse msg into reply (with the same payload)
+impl<Payload> Message<Payload> {
+    pub fn into_reply(self, id: Option<&mut usize>) -> Self {
+        Self {
+            src: self.dst,
+            dst: self.src,
+            body: Body {
+                // increment the msg val by 1
+                id: id.map(|id| {
+                    let mid = *id;
+                    *id += 1;
+                    mid
+                }),
+                in_reply_to: self.body.id,
+                payload: self.body.payload,
+            },
+        }
+    }
+}
+
 /* Node used to ONLY have <Payload> as generic type, now it has a State
  * Init logic abstracted into enum to get Init
  * also add init_payload extraction logic to Node, so that unique_node can have a global unique id
